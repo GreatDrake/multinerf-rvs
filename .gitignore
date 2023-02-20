@@ -2,6 +2,7 @@ internal/pycolmap
 __pycache__/
 interal/__pycache__/
 tests/__pycache__/
+data360/
 .DS_Store
 .vscode/
 .idea/
