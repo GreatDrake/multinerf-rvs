@@ -33,7 +33,7 @@ import jax
 from jax import random
 import jax.numpy as jnp
 import optax
-
+import flax
 
 def tree_sum(tree):
     return jax.tree_util.tree_reduce(lambda x, y: x + y, tree, initializer=0)
@@ -152,6 +152,7 @@ def distortion_loss(ray_history, config):
     c = last_ray_results['sdist']
     w = last_ray_results['weights']
     loss = jnp.mean(stepfun.lossfun_distortion(c, w))
+    #loss = jnp.mean(stepfun.lossfun_distortion(jax.lax.stop_gradient(c), w))
     return config.distortion_loss_mult * loss
 
 
@@ -314,6 +315,8 @@ def create_train_step(model: models.Model,
 
         loss_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
         (_, stats), grad = loss_grad_fn(state.params)
+        #jax.debug.print("prop dens0 sum: {x}", x=(state.params["params"]["PropMLP_0"]["Dense_0"]["kernel"]**2).sum())
+        #jax.debug.print("nerf dens0 sum: {x}", x=(state.params["params"]["NerfMLP_0"]["Dense_0"]["kernel"]**2).sum())
 
         pmean = lambda x: jax.lax.pmean(x, axis_name='batch')
         grad = pmean(grad)
@@ -368,7 +371,16 @@ def create_optimizer(
             **lr_kwargs)
 
     lr_fn_main = get_lr_fn(config.lr_init, config.lr_final)
-    tx = optax.adam(learning_rate=lr_fn_main, **adam_kwargs)
+    lr_fn_prop = get_lr_fn(config.lr_init_prop, config.lr_final_prop)
+    
+    print("main:", config.lr_init, config.lr_final)
+    print("prop:", config.lr_init_prop, config.lr_final_prop)
+    
+    partition_optimizers = {'Nerf': optax.adam(learning_rate=lr_fn_main, **adam_kwargs), 
+                            'Prop': optax.adam(learning_rate=lr_fn_prop, **adam_kwargs)}
+    param_partitions = flax.core.frozen_dict.freeze(flax.traverse_util.path_aware_map(
+        lambda path, v: 'Prop' if 'PropMLP_0' in path else 'Nerf', variables))
+    tx = optax.multi_transform(partition_optimizers, param_partitions)
 
     return TrainState.create(apply_fn=None, params=variables, tx=tx), lr_fn_main
 

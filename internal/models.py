@@ -81,6 +81,7 @@ class Model(nn.Module):
     # Use gather ops for faster GPU resampling.
     use_gpu_resampling: bool = False
     opaque_background: bool = False  # If true, make the background opaque.
+    rvs: bool = False
 
     @nn.compact
     def __call__(
@@ -134,7 +135,7 @@ class Model(nn.Module):
                 name='exposure_scaling_offsets')
 
         # Define the mapping from normalized to metric ray distance.
-        _, s_to_t = coord.construct_ray_warps(
+        t_to_s, s_to_t = coord.construct_ray_warps(
             self.raydist_fn, rays.near, rays.far)
 
         # Initialize the range of (normalized) distances for each ray to [0, 1],
@@ -200,22 +201,40 @@ class Model(nn.Module):
 
             # Draw sampled intervals from each ray's current weights.
             key, rng = random_split(rng)
-            sdist = stepfun.sample_intervals(
-                key,
-                sdist,
-                logits_resample,
-                num_samples,
-                single_jitter=self.single_jitter,
-                domain=(init_s_near, init_s_far),
-                use_gpu_resampling=self.use_gpu_resampling)
+            
+            if i_level == 1 and self.num_levels == 2 and self.rvs:
+                print("rvs")
+                
+                tdist = stepfun.sample_intervals(
+                    key,
+                    tdist,
+                    logits_resample,
+                    num_samples,
+                    single_jitter=self.single_jitter,
+                    domain=(s_to_t(init_s_near), s_to_t(init_s_far)),
+                    use_gpu_resampling=self.use_gpu_resampling,
+                    reparameterized=True,
+                    sigma=sigma,
+                    sigma_ints=sigma_ints)
+                
+                sdist = t_to_s(tdist)
+            else:
+                sdist = stepfun.sample_intervals(
+                    key,
+                    sdist,
+                    logits_resample,
+                    num_samples,
+                    single_jitter=self.single_jitter,
+                    domain=(init_s_near, init_s_far),
+                    use_gpu_resampling=self.use_gpu_resampling)
 
-            # Optimization will usually go nonlinear if you propagate gradients
-            # through sampling.
-            if self.stop_level_grad:
-                sdist = jax.lax.stop_gradient(sdist)
+                # Optimization will usually go nonlinear if you propagate gradients
+                # through sampling.
+                if self.stop_level_grad:
+                    sdist = jax.lax.stop_gradient(sdist)
 
-            # Convert normalized distances to metric distances.
-            tdist = s_to_t(sdist)
+                # Convert normalized distances to metric distances.
+                tdist = s_to_t(sdist)
 
             # Cast our rays, by turning our distance intervals into Gaussians.
             gaussians = render.cast_rays(
@@ -250,6 +269,13 @@ class Model(nn.Module):
                 rays.directions,
                 opaque_background=self.opaque_background,
             )[0]
+            
+            sigma, sigma_ints = render.compute_sigma_ints(
+                ray_results['density'],
+                tdist,
+                rays.directions,
+                opaque_background=self.opaque_background,
+            )
 
             # Define or sample the background color for each ray.
             if self.bg_intensity_range[0] == self.bg_intensity_range[1]:

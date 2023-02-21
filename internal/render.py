@@ -151,6 +151,13 @@ def compute_alpha_weights(density, tdist, dirs, opaque_background=False):
     weights = alpha * trans
     return weights, alpha, trans
 
+def compute_sigma_ints(density, tdist, dirs, opaque_background=False):
+    t_delta = tdist[..., 1:] - tdist[..., :-1]
+    #density_norm = density * jnp.linalg.norm(dirs[..., None, :], axis=-1)
+    density_norm = density
+    ints = jnp.cumsum(t_delta * density_norm, axis=-1)
+    return density_norm, ints
+
 
 def volumetric_rendering(rgbs,
                          weights,

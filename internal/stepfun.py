@@ -162,13 +162,46 @@ def invert_cdf(u, t, w_logits, use_gpu_resampling=False):
     return t_new
 
 
+def invert_cdf_rep(u, t, sigma, sigma_ints, use_gpu_resampling=False):
+    rshp = False
+    if len(u.shape) == 4:
+        u = jnp.squeeze(u, axis=(1, 2))
+        t = jnp.squeeze(t, axis=(1, 2))
+        sigma = jnp.squeeze(sigma, axis=(1, 2))
+        sigma_ints = jnp.squeeze(sigma_ints, axis=(1, 2))
+        rshp = True
+        
+    def get_bin_values(values, indices):
+        return jnp.take_along_axis(values, indices, -1)
+    
+    sigma_int_far = sigma_ints[..., -1:] 
+    lse_input = jnp.stack([-sigma_int_far + jnp.log(u), jnp.log1p(-u)], axis=-1)
+    inv_args = -(jax.scipy.special.logsumexp(lse_input, axis=-1))
+    y = jnp.where(sigma_int_far < 1e-6, u * sigma_int_far, inv_args)
+    
+    indices = jax.vmap(jnp.searchsorted)(sigma_ints, y)
+    indices = jax.lax.clamp(0, indices, sigma_ints.shape[-1] - 1)
+    
+    t_right = get_bin_values(t, indices + 1)
+    s = get_bin_values(sigma, indices)
+    full_part = get_bin_values(sigma_ints, indices)
+    result = t_right - (full_part - y) / (s + 1e-8)
+    
+    if rshp:
+        result = result[:,None,None,:]
+    return result
+
+
 def sample(rng,
            t,
            w_logits,
            num_samples,
            single_jitter=False,
            deterministic_center=False,
-           use_gpu_resampling=False):
+           use_gpu_resampling=False,
+           reparameterized=False,
+           sigma=None,
+           sigma_ints=None):
     """Piecewise-Constant PDF sampling from a step function.
 
     Args:
@@ -209,7 +242,10 @@ def sample(rng,
             jnp.linspace(0, 1 - u_max, num_samples) +
             jax.random.uniform(rng, t.shape[:-1] + (d,), maxval=max_jitter))
 
-    return invert_cdf(u, t, w_logits, use_gpu_resampling=use_gpu_resampling)
+    if not reparameterized:
+        return invert_cdf(u, t, w_logits, use_gpu_resampling=use_gpu_resampling)
+    else:
+        return invert_cdf_rep(u, t, sigma, sigma_ints, use_gpu_resampling=use_gpu_resampling)
 
 
 def sample_intervals(rng,
@@ -218,7 +254,10 @@ def sample_intervals(rng,
                      num_samples,
                      single_jitter=False,
                      domain=(-jnp.inf, jnp.inf),
-                     use_gpu_resampling=False):
+                     use_gpu_resampling=False,
+                     reparameterized=False,
+                     sigma=None,
+                     sigma_ints=None):
     """Sample *intervals* (rather than points) from a step function.
 
     Args:
@@ -237,6 +276,8 @@ def sample_intervals(rng,
     Returns:
       t_samples: jnp.ndarray(float32), [batch_size, num_samples].
     """
+    #print(t.shape)
+    #print(w_logits.shape)
     if num_samples <= 1:
         raise ValueError(f'num_samples must be > 1, is {num_samples}.')
 
@@ -248,7 +289,13 @@ def sample_intervals(rng,
         num_samples,
         single_jitter,
         deterministic_center=True,
-        use_gpu_resampling=use_gpu_resampling)
+        use_gpu_resampling=use_gpu_resampling,
+        reparameterized=reparameterized,
+        sigma=sigma,
+        sigma_ints=sigma_ints)
+    
+    #if reparameterized:
+    #    return centers
 
     # The intervals we return will span the midpoints of each adjacent sample.
     mid = (centers[..., 1:] + centers[..., :-1]) / 2
@@ -262,7 +309,6 @@ def sample_intervals(rng,
 
     t_samples = jnp.concatenate([first, mid, last], axis=-1)
     return t_samples
-
 
 def lossfun_distortion(t, w):
     """Compute iint w[i] w[j] |t[i] - t[j]| di dj."""

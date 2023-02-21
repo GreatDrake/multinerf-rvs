@@ -109,6 +109,8 @@ class Config:
   lr_final: float = 0.00002  # The final learning rate.
   lr_delay_steps: int = 512  # The number of "warmup" learning steps.
   lr_delay_mult: float = 0.01  # How much sever the "warmup" should be.
+  lr_init_prop: float = 0.002  
+  lr_final_prop: float = 0.00002
   adam_beta1: float = 0.9  # Adam's beta2 hyperparameter.
   adam_beta2: float = 0.999  # Adam's beta2 hyperparameter.
   adam_eps: float = 1e-6  # Adam's epsilon hyperparameter.
