@@ -16,7 +16,7 @@
 
 from internal import stepfun
 import jax.numpy as jnp
-
+import jax
 
 def lift_gaussian(d, t_mean, t_var, r_var, diag):
     """Lift a Gaussian defined along a ray to 3D coordinates."""
@@ -127,6 +127,27 @@ def cast_rays(tdist, origins, directions, radii, ray_shape, diag=True):
     means = means + origins[..., None, :]
     return means, covs
 
+def compute_alpha_weights_xdist(density, tdist, x, dirs, opaque_background=False):
+    t_delta = jnp.linalg.norm(x[..., 1:, :] - x[..., :-1, :], axis=-1)
+    delta = t_delta * jnp.linalg.norm(dirs[..., None, :], axis=-1)
+    density_delta = density * delta
+
+    if opaque_background:
+        # Equivalent to making the final t-interval infinitely wide.
+        density_delta = jnp.concatenate([
+            density_delta[..., :-1],
+            jnp.full_like(density_delta[..., -1:], jnp.inf)
+        ],
+            axis=-1)
+
+    alpha = 1 - jnp.exp(-density_delta)
+    trans = jnp.exp(-jnp.concatenate([
+        jnp.zeros_like(density_delta[..., :1]),
+        jnp.cumsum(density_delta[..., :-1], axis=-1)
+    ],
+        axis=-1))
+    weights = alpha * trans
+    return weights, alpha, trans
 
 def compute_alpha_weights(density, tdist, dirs, opaque_background=False):
     """Helper function for computing alpha compositing weights."""
@@ -151,11 +172,18 @@ def compute_alpha_weights(density, tdist, dirs, opaque_background=False):
     weights = alpha * trans
     return weights, alpha, trans
 
-def compute_sigma_ints(density, tdist, dirs, opaque_background=False):
-    t_delta = tdist[..., 1:] - tdist[..., :-1]
+#def compute_sigma_ints_old(density, tdist, dirs, opaque_background=False):
+    #t_delta = tdist[..., 1:] - tdist[..., :-1]
     #density_norm = density * jnp.linalg.norm(dirs[..., None, :], axis=-1)
-    density_norm = density
-    ints = jnp.cumsum(t_delta * density_norm, axis=-1)
+    #density_norm = density
+    #ints = jnp.cumsum(t_delta * density_norm, axis=-1)
+    #return density_norm, ints
+
+def compute_sigma_ints(density, tdist, sdist, dirs, anneal=1.0, opaque_background=False):
+    s_delta = sdist[..., 1:] - sdist[..., :-1]
+    t_delta = tdist[..., 1:] - tdist[..., :-1]
+    density_norm = anneal * density * t_delta / s_delta
+    ints = jnp.cumsum(t_delta * density * anneal, axis=-1)
     return density_norm, ints
 
 
