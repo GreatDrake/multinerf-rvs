@@ -15,14 +15,17 @@
 
 export CUDA_VISIBLE_DEVICES=0
 
-SCENE=room
-EXPERIMENT=360_two_level
+SCENE=treehill
+EXPERIMENT=360_two_level_rvs
 DATA_DIR=/home/nvmorozov/multinerf-rvs/data360
 CHECKPOINT_DIR=/home/nvmorozov/multinerf-rvs/checkpoints/"$EXPERIMENT"/"$SCENE"
 
-python -m eval \
-  --gin_configs=configs/360_two_level.gin \
+python -m render \
+  --gin_configs=configs/360_two_level_rvs.gin \
   --gin_bindings="Config.data_dir = '${DATA_DIR}/${SCENE}'" \
   --gin_bindings="Config.checkpoint_dir = '${CHECKPOINT_DIR}'" \
-  --gin_bindings="Config.factor = 2" \
+  --gin_bindings="Config.render_path = True" \
+  --gin_bindings="Config.render_path_frames = 10" \
+  --gin_bindings="Config.render_dir = '${CHECKPOINT_DIR}/render/'" \
+  --gin_bindings="Config.render_video_fps = 20" \
   --logtostderr

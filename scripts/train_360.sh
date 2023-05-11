@@ -15,8 +15,8 @@
 
 export CUDA_VISIBLE_DEVICES=0
 
-SCENE=bicycle
-EXPERIMENT=360
+SCENE=counter
+EXPERIMENT=360_two_level
 DATA_DIR=/home/nvmorozov/multinerf-rvs/data360
 CHECKPOINT_DIR=/home/nvmorozov/multinerf-rvs/checkpoints/"$EXPERIMENT"/"$SCENE"
 
@@ -25,7 +25,8 @@ CHECKPOINT_DIR=/home/nvmorozov/multinerf-rvs/checkpoints/"$EXPERIMENT"/"$SCENE"
 
 rm "$CHECKPOINT_DIR"/*
 python -m train \
-  --gin_configs=configs/360.gin \
+  --gin_configs=configs/360_two_level.gin \
   --gin_bindings="Config.data_dir = '${DATA_DIR}/${SCENE}'" \
   --gin_bindings="Config.checkpoint_dir = '${CHECKPOINT_DIR}'" \
+  --gin_bindings="Config.factor = 2" \
   --logtostderr

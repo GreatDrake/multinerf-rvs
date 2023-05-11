@@ -183,7 +183,7 @@ def compute_sigma_ints(density, tdist, sdist, dirs, anneal=1.0, opaque_backgroun
     s_delta = sdist[..., 1:] - sdist[..., :-1]
     t_delta = tdist[..., 1:] - tdist[..., :-1]
     density_norm = anneal * density * t_delta / s_delta
-    ints = jnp.cumsum(t_delta * density * anneal, axis=-1)
+    ints = jnp.cumsum(s_delta * density * anneal, axis=-1)
     return density_norm, ints
 
 

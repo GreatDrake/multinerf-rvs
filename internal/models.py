@@ -232,31 +232,24 @@ class Model(nn.Module):
                     reparameterized=True,
                     sigma=sigma,
                     sigma_ints=sigma_ints)
-                
+               
+                #if rng is not None: 
+                #    key, rng = random_split(rng)
+                #    sdist = sdist + 0.001 * jax.random.uniform(key, shape=sdist.shape)
+                #    sdist = jnp.clip(sdist, init_s_near, init_s_far - 0.0001)
+                #    sdist = jnp.sort(sdist, axis=-1) 
                 tdist = s_to_t(sdist)
                 
             else:
-                if i_level == 0:
-                    sdist = stepfun.sample_intervals(
-                        key,
-                        sdist,
-                        logits_resample,
-                        num_samples,
-                        single_jitter=self.single_jitter,
-                        domain=(init_s_near, init_s_far),
-                        use_gpu_resampling=self.use_gpu_resampling)
-                else:
-                    sdist = stepfun.sample_intervals(
-                        key,
-                        sdist,
-                        logits_resample,
-                        num_samples,
-                        single_jitter=self.single_jitter,
-                        domain=(init_s_near, init_s_far),
-                        use_gpu_resampling=self.use_gpu_resampling,
-                        reparameterized=True,
-                        sigma=sigma,
-                        sigma_ints=sigma_ints)
+                key, rng = random_split(rng)
+                sdist = stepfun.sample_intervals(
+                    key,
+                    sdist,
+                    logits_resample,
+                    num_samples,
+                    single_jitter=self.single_jitter,
+                    domain=(init_s_near, init_s_far),
+                    use_gpu_resampling=self.use_gpu_resampling)
 
                 # Optimization will usually go nonlinear if you propagate gradients
                 # through sampling.
@@ -291,19 +284,6 @@ class Model(nn.Module):
                 glo_vec=None if is_prop else glo_vec,
                 exposure=rays.exposure_values,
             )
-            
-            '''
-            #print(rays.origins.shape, rays.directions.shape, tdist.shape)
-            ray_pts = rays.origins[...,None,:] + rays.directions[...,None,:] * tdist[...,:,None]
-            
-            weights = render.compute_alpha_weights_xdist(
-                ray_results['density'],
-                tdist,
-                ray_pts,
-                rays.directions,
-                opaque_background=self.opaque_background,
-            )[0]
-            '''
 
             # Get the weights used by volumetric rendering (and our other losses).
             weights = render.compute_alpha_weights(
